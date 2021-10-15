@@ -93,6 +93,7 @@ class AnkiConnector:
 
     def add_notes(self):
         notes = [self.assembly_note(note) for note in self.unsent_notes]
+        print(notes)
         result = self.invoke("addNotes", notes=notes)
         self.unsent_notes.clear()
         return result

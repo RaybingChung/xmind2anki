@@ -84,6 +84,7 @@ class XMindParser:
             "Node": node["title"],
             "Anchestors": json.dumps(node["path"], ensure_ascii=False),
             "Children": json.dumps(self.get_children_titles(node), ensure_ascii=False),
+            "Id": node["id"],
             "tags": node["path"][:3]
         }
         return anki_note
@@ -104,5 +105,8 @@ if __name__ == '__main__':
     count = xmind_parser.traverse()
     anki_connector.unsent_notes = xmind_parser.unstashed_nodes
     result = anki_connector.add_notes()
+    if None in result['result'] or result['error'] is not None:
+        print("There may some notes having identical Id to previously added notes or other mistakes.")
+    print(result)
 
 
