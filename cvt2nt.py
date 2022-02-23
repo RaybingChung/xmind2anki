@@ -7,7 +7,7 @@ def cvt2ind_wri_nt(node: Node):
     deck_name = 'test'
     common_model = "基础"  # common_mode
     advanced_model = "主题-词组-延申思路"  # advanced_mode
-
+    tags = ['xmind']
     children = node['children']
     en_children = []
     cn_children = []
@@ -26,20 +26,20 @@ def cvt2ind_wri_nt(node: Node):
             des_ideas = des_ideas + decorate_string(cn_child)
 
         return nt_add_detail(ind_wri_material(node['title'], phrase, des_ideas),
-                             deck_name, model_name=advanced_model, tags=[])
+                             deck_name, model_name=advanced_model, tags=tags)
 
     elif len(cn_children) != 0 and len(en_children) == 0:
         back = ''
         for cn_child in cn_children:
             back = back + decorate_string(cn_child)
         return nt_add_detail(common_note(front=node['title'], back=back),
-                             deck_name, model_name=common_model, tags=[])
+                             deck_name, model_name=common_model, tags=tags)
     elif len(cn_children) == 0 and len(en_children) != 0:
         back = ''
         for en_child in en_children:
             back = back + decorate_string(en_child)
         return nt_add_detail(common_note(front=node['title'], back=back),
-                             deck_name, model_name=common_model, tags=[])
+                             deck_name, model_name=common_model, tags=tags)
     else:
         pass
 
