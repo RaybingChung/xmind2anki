@@ -74,16 +74,6 @@ def create_deck(deck_name: str):
         invoke('createDeck', deck=deck_name)
 
 
-def create_note_type(model_name: str, fields: list):
-    action = "createModel"
-    params = {
-        "modelName": model_name,
-        "inOrderFields": fields,
-    }
-    request_json = json.dumps(request(action, **params), ensure_ascii=False).encode('utf-8')
-    pass
-
-
 def add_note(note):
     result = invoke("addNote", note=note)
     return result

@@ -1,11 +1,13 @@
-import zipfile
 import json
-from typing import Dict, List, TypedDict
+import zipfile
+from copy import copy
+from typing import List, TypedDict
 
 
 class Node(TypedDict):
     title: str
     children: List[str]
+    ancestors: List[str]
 
 
 def load_xmind(path_to_file):
@@ -33,20 +35,49 @@ def get_children_titles(node):
     return [get_title(child) for child in get_children_nodes(node)]
 
 
-def traverse_nodes(xmind_file_path):
-    root = load_xmind(xmind_file_path)
-    unexplored_node = [root]
-    traversed_nodes: List[Node] = []
+# def traverse_nodes(xmind_file_path):
+#     root = load_xmind(xmind_file_path)
+#     unexplored_node = [root]
+#     traversed_nodes: List[Node] = []
+#
+#     while len(unexplored_node) != 0:
+#         current_node = unexplored_node[-1]
+#         del unexplored_node[-1]
+#
+#         if 'children' not in current_node:
+#             continue
+#
+#         for child_node in reversed(get_children_nodes(current_node)):
+#             unexplored_node.append(child_node)
+#         traversed_nodes.append({'title': get_title(current_node),
+#                                 'children': get_children_titles(current_node),
+#                                 'ancestors': []})
+#     return traversed_nodes
 
+
+def traverse_nodes_rem_path(xmind_file_path):
+    # ancestors are directly added to the node object in the memory
+    root = load_xmind(xmind_file_path)
+    root['ancestors'] = []
+    unexplored_node = [root]
+
+    traversed_nodes_rem_path: List[Node] = []
     while len(unexplored_node) != 0:
+
         current_node = unexplored_node[-1]
         del unexplored_node[-1]
 
         if 'children' not in current_node:
             continue
+        traversed_nodes_rem_path.append({'title': get_title(current_node),
+                                         'children': get_children_titles(current_node),
+                                         'ancestors': current_node['ancestors']})
+
+        ancestors = copy(current_node['ancestors'])
+        ancestors.append(get_title(current_node))
 
         for child_node in reversed(get_children_nodes(current_node)):
+            child_node['ancestors'] = ancestors
             unexplored_node.append(child_node)
-        traversed_nodes.append({'title': get_title(current_node),
-                                'children': get_children_titles(current_node)})
-    return traversed_nodes
+
+    return traversed_nodes_rem_path
