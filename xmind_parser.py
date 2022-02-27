@@ -1,83 +1,131 @@
 import json
 import zipfile
-from copy import copy
-from typing import List, TypedDict
+from shutil import copyfile
+from typing import List, TypedDict, Dict
 
 
-class Node(TypedDict):
+class ProcessedNode(TypedDict):
     title: str
     children: List[str]
     ancestors: List[str]
 
 
-def load_xmind(path_to_file):
+def create_backup_xmind_file(path_to_file: str):
+    if path_to_file.split('.')[-1] != 'xmind':
+        raise Exception('not xmind file')
+    path_name = path_to_file.split(sep='.')
+    path_name[-2] = path_name[-2] + '_backup'
+    dst_path_to_file = '.'.join(path_name)
+    copyfile(path_to_file, dst_path_to_file)
+    return dst_path_to_file
+
+
+def load_xmind(path_to_file: str):
     with zipfile.ZipFile(path_to_file) as zip_out:
         with zip_out.open('content.json') as zip_file:
-            file_content = zip_file.read()
-    file_content = json.loads(file_content)
-    file_content = file_content[0]['rootTopic']
-    return file_content
+            xmind = zip_file.read()
+
+    xmind = json.loads(xmind)
+    return xmind
 
 
-def get_title(node):
-    return node["title"]
+def save_xmind(path_to_file, xmind):
+    back_up_path = create_backup_xmind_file(path_to_file)
+
+    with zipfile.ZipFile(back_up_path, mode='r') as zip_in:
+        with zipfile.ZipFile(path_to_file, mode='w') as zip_out:
+            # print(zip_in.infolist())
+            for item in zip_in.infolist():
+                if item.is_dir():
+                    continue
+                if item.filename == 'content.json':
+                    continue
+                buffer = zip_in.read(item)
+
+                with zip_out.open(item, mode='w') as zip_file:
+                    zip_file.write(buffer)
+            with zip_out.open('content.json', mode='w') as zip_file:
+                zip_file.write(bytes(json.dumps(xmind), 'utf-8'))
 
 
-def get_children_nodes(node):
-    if "children" not in node:
-        raise Exception('There is no child in {}'.format(get_title(node)))
-    return node["children"]["attached"]
+def get_root(xmind):
+    return xmind[0]['rootTopic']
 
 
-def get_children_titles(node):
-    if "children" not in node:
-        raise Exception('There is no child in {}'.format(get_title(node)))
-    return [get_title(child) for child in get_children_nodes(node)]
+def get_hrefs(xmind):
+    return [href['rootTopic'] for href in xmind][1:]
 
 
-# def traverse_nodes(xmind_file_path):
-#     root = load_xmind(xmind_file_path)
-#     unexplored_node = [root]
-#     traversed_nodes: List[Node] = []
-#
-#     while len(unexplored_node) != 0:
-#         current_node = unexplored_node[-1]
-#         del unexplored_node[-1]
-#
-#         if 'children' not in current_node:
-#             continue
-#
-#         for child_node in reversed(get_children_nodes(current_node)):
-#             unexplored_node.append(child_node)
-#         traversed_nodes.append({'title': get_title(current_node),
-#                                 'children': get_children_titles(current_node),
-#                                 'ancestors': []})
-#     return traversed_nodes
+def get_title_from_raw_node(raw_node):
+    return raw_node["title"]
 
 
-def traverse_nodes_rem_path(xmind_file_path):
-    # ancestors are directly added to the node object in the memory
-    root = load_xmind(xmind_file_path)
-    root['ancestors'] = []
-    unexplored_node = [root]
+def get_children_nodes_from_raw_node(raw_node):
+    if "children" not in raw_node:
+        raise Exception('There is no child in {}'.format(get_title_from_raw_node(raw_node)))
+    return raw_node["children"]["attached"]
 
-    traversed_nodes_rem_path: List[Node] = []
-    while len(unexplored_node) != 0:
 
-        current_node = unexplored_node[-1]
-        del unexplored_node[-1]
+def get_children_titles_from_raw_node(raw_node):
+    if "children" not in raw_node:
+        raise Exception('There is no child in {}'.format(get_title_from_raw_node(raw_node)))
+    return [get_title_from_raw_node(child) for child in get_children_nodes_from_raw_node(raw_node)]
 
-        if 'children' not in current_node:
-            continue
-        traversed_nodes_rem_path.append({'title': get_title(current_node),
-                                         'children': get_children_titles(current_node),
-                                         'ancestors': current_node['ancestors']})
 
-        ancestors = copy(current_node['ancestors'])
-        ancestors.append(get_title(current_node))
+def check_process_or_not_from_raw_node(raw_node: Dict):
+    if 'markers' not in raw_node:
+        return False
+    else:
+        for marker in raw_node['markers']:
+            if marker['markerId'] == 'task-done':
+                return True
+        return False
 
-        for child_node in reversed(get_children_nodes(current_node)):
-            child_node['ancestors'] = ancestors
-            unexplored_node.append(child_node)
 
-    return traversed_nodes_rem_path
+def add_processed_marker(raw_node: Dict):
+    if 'markers' not in raw_node:
+        raw_node['markers']: List = [{'markerId': "task-done"}]
+    else:
+        raw_node['markers'].append({'markerId': "task-done"})
+
+
+def tran_node_raw2process(raw_node, ancestors):
+    # print(ancestors)
+    return {'title': get_title_from_raw_node(raw_node),
+            'children': get_children_titles_from_raw_node(raw_node),
+            'ancestors': ancestors}
+
+
+def traverse_nodes(xmind_file_path):
+    xmind = load_xmind(xmind_file_path)
+    root = get_root(xmind)
+
+    ancestor_list_stack = [[]]
+    raw_node_stack = [root]
+    processed_node_stack = []
+
+    while len(raw_node_stack) != 0:
+        node = raw_node_stack.pop()
+        current_title = get_title_from_raw_node(node)
+        ancestors = ancestor_list_stack.pop()
+        # print(current_title)
+        if 'children' in node:
+            if check_process_or_not_from_raw_node(node) is False:
+                add_processed_marker(node)
+                processed_node_stack.append(tran_node_raw2process(node, ancestors))
+                # print(ancestors)
+            else:
+                pass
+            children = get_children_nodes_from_raw_node(node)
+
+            raw_node_stack.extend(reversed(children))
+            children_ancestors = ancestors.copy()
+            children_ancestors.append(current_title)
+            ancestor_list_stack.extend([children_ancestors for i in range(len(children))])
+
+        else:
+            if check_process_or_not_from_raw_node(node) is False:
+                add_processed_marker(node)
+            else:
+                pass
+    return processed_node_stack, xmind

@@ -1,6 +1,6 @@
 from typing import List
 
-from xmind_parser import Node
+from xmind_parser import ProcessedNode
 
 
 # def cvt2ind_wri_nt(node: Node):
@@ -46,7 +46,7 @@ from xmind_parser import Node
 #         pass
 
 
-def cvt2ind_wri_nt_rem_path(node: Node):
+def cvt2ind_wri_nt_rem_path(node: ProcessedNode):
     deck_name = 'test'
     common_model = "基础"  # common_mode
     common_phrase_model = '主题-表达'
