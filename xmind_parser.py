@@ -2,6 +2,7 @@ import json
 import zipfile
 from shutil import copyfile
 from typing import List, TypedDict, Dict
+from warnings import warn
 
 
 class ProcessedNode(TypedDict):
@@ -45,7 +46,7 @@ def save_xmind(path_to_file, xmind):
                 with zip_out.open(item, mode='w') as zip_file:
                     zip_file.write(buffer)
             with zip_out.open('content.json', mode='w') as zip_file:
-                zip_file.write(bytes(json.dumps(xmind), 'utf-8'))
+                zip_file.write(bytes(json.dumps(xmind, ensure_ascii=False), 'utf-8'))
 
 
 def get_root(xmind):
@@ -53,23 +54,53 @@ def get_root(xmind):
 
 
 def get_hrefs(xmind):
-    return [href['rootTopic'] for href in xmind][1:]
+    return [href['rootTopic'] for href in xmind[1:]]
 
 
 def get_title_from_raw_node(raw_node):
     return raw_node["title"]
 
 
-def get_children_nodes_from_raw_node(raw_node):
-    if "children" not in raw_node:
+def get_children_nodes_from_raw_node(raw_node, hrefs):
+    if "children" not in raw_node and 'href' not in raw_node:
         raise Exception('There is no child in {}'.format(get_title_from_raw_node(raw_node)))
-    return raw_node["children"]["attached"]
+    elif "children" in raw_node and 'href' in raw_node:
+        warn('There are both href and children in {}'.format(str(raw_node)))
+        # href_id = raw_node['href'].split('#')[-1]
+        # for node in hrefs:
+        #     if node['id'] == href_id:
+        #         return node['children']['attached'] + raw_node['children']['attached']
+        href_node = get_href_node(raw_node, hrefs)
+        return href_node['children']['attached'] + raw_node['children']['attached']
+    elif "children" not in raw_node and 'href' in raw_node:
+        # href_id = raw_node['href'].split('#')[-1]
+        # for node in hrefs:
+        #     if node['id'] == href_id:
+        #         return node['children']['attached']
+        href_node = get_href_node(raw_node, hrefs)
+        return href_node['children']['attached']
+    else:
+        return raw_node['children']['attached']
 
 
-def get_children_titles_from_raw_node(raw_node):
-    if "children" not in raw_node:
+def get_href_node(current_raw_node: dict, hrefs):
+    if 'href' not in current_raw_node:
+        raise Exception('There is no href in this node {}'.format(str(current_raw_node)))
+    href_id = current_raw_node['href'].split('#')[-1]
+    # print(hrefs)
+    for node in hrefs:
+        # print(node['id'])
+        if node['id'] == href_id:
+            return node
+    raise Exception('There is no specific id:{} node in hrefs of node {}'.format(href_id, str(current_raw_node)))
+
+
+def get_children_titles_from_raw_node(raw_node, hrefs):
+    if "children" not in raw_node and 'href' not in raw_node:
         raise Exception('There is no child in {}'.format(get_title_from_raw_node(raw_node)))
-    return [get_title_from_raw_node(child) for child in get_children_nodes_from_raw_node(raw_node)]
+    if 'href' in raw_node:
+        return [get_title_from_raw_node(child) for child in get_children_nodes_from_raw_node(raw_node, hrefs)]
+    return [get_title_from_raw_node(child) for child in get_children_nodes_from_raw_node(raw_node, hrefs)]
 
 
 def check_process_or_not_from_raw_node(raw_node: Dict):
@@ -82,23 +113,27 @@ def check_process_or_not_from_raw_node(raw_node: Dict):
         return False
 
 
-def add_processed_marker(raw_node: Dict):
+def add_processed_marker(raw_node: Dict, hrefs):
+    # print(raw_node)
+    if 'href' in raw_node:
+        href_node = get_href_node(raw_node, hrefs)
+        add_processed_marker(href_node, hrefs)
     if 'markers' not in raw_node:
         raw_node['markers']: List = [{'markerId': "task-done"}]
     else:
         raw_node['markers'].append({'markerId': "task-done"})
 
 
-def tran_node_raw2process(raw_node, ancestors):
-    # print(ancestors)
+def trans_raw_node2processed_node(raw_node, ancestors, hrefs):
     return {'title': get_title_from_raw_node(raw_node),
-            'children': get_children_titles_from_raw_node(raw_node),
+            'children': get_children_titles_from_raw_node(raw_node, hrefs),
             'ancestors': ancestors}
 
 
 def traverse_nodes(xmind_file_path):
     xmind = load_xmind(xmind_file_path)
     root = get_root(xmind)
+    hrefs = get_hrefs(xmind)
 
     ancestor_list_stack = [[]]
     raw_node_stack = [root]
@@ -108,24 +143,25 @@ def traverse_nodes(xmind_file_path):
         node = raw_node_stack.pop()
         current_title = get_title_from_raw_node(node)
         ancestors = ancestor_list_stack.pop()
-        # print(current_title)
-        if 'children' in node:
+        # print(node)
+        if "children" in node or 'href' in node:
             if check_process_or_not_from_raw_node(node) is False:
-                add_processed_marker(node)
-                processed_node_stack.append(tran_node_raw2process(node, ancestors))
-                # print(ancestors)
+                add_processed_marker(node, hrefs)
+                processed_node_stack.append(trans_raw_node2processed_node(node, ancestors, hrefs))
+
             else:
                 pass
-            children = get_children_nodes_from_raw_node(node)
+            children = get_children_nodes_from_raw_node(node, hrefs)
 
             raw_node_stack.extend(reversed(children))
             children_ancestors = ancestors.copy()
             children_ancestors.append(current_title)
-            ancestor_list_stack.extend([children_ancestors for i in range(len(children))])
+            ancestor_list_stack.extend([children_ancestors for _ in range(len(children))])
 
         else:
             if check_process_or_not_from_raw_node(node) is False:
-                add_processed_marker(node)
+                add_processed_marker(node, hrefs)
             else:
                 pass
+    # print(xmind)
     return processed_node_stack, xmind

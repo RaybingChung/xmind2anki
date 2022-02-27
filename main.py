@@ -9,7 +9,7 @@ xmind_file_path = r'E:\MyLibrary\Hunt4job\找工 - Copy.xmind'
 
 ordered_nodes, xmind = xmind_parser.traverse_nodes(xmind_file_path)
 print(ordered_nodes)
-xmind_parser.save_xmind(xmind_file_path, xmind)
+
 
 if not check_connection():
     print("Anki not connect!!")
@@ -19,3 +19,4 @@ print('Anki connect.')
 for node in tqdm(ordered_nodes):
     nt = cvt2ind_wri_nt_rem_path(node)
     add_note(nt)
+xmind_parser.save_xmind(xmind_file_path, xmind)
