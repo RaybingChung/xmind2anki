@@ -1,7 +1,7 @@
-import json
-import urllib.request
-import urllib.error
 import datetime
+import json
+import urllib.error
+import urllib.request
 import warnings
 
 
@@ -52,7 +52,7 @@ def invoke(action, **params):
 def check_connection():
     try:
         urllib.request.urlopen("http://localhost:8765")
-    except WindowsError as e:
+    except WindowsError:
         return False
     return True
 
@@ -90,8 +90,31 @@ def record_failed_data(params):
         json.dump(params, f, ensure_ascii=False)
 
 
+def find_notes(**params):
+
+    note_content: str = params['正面']
+    model: str = params['modelName']
+    query = []
+    if model is not None:
+        query.append('note:\'' + model + '\'')
+    if note_content is not None:
+        query.append('\'' + note_content + '\'')
+
+    return invoke(action="findNotes", params={
+        'query': ' '.join(query)
+    })
+
+
+def update_note(params):
+    result = find_notes(**params)['result']
+    if len(result) != 1:
+        raise Exception('There are two notes identical to the updated note. Which one to update?')
+    params["id"] = result[0]
+    invoke('updateNoteFields', **params)
+
+
 def warn_print(string):
-    class bcolors:
+    class TerminalColors:
         HEADER = '\033[95m'
         OKBLUE = '\033[94m'
         OKCYAN = '\033[96m'
@@ -102,4 +125,4 @@ def warn_print(string):
         BOLD = '\033[1m'
         UNDERLINE = '\033[4m'
 
-    print(bcolors.FAIL + string + bcolors.ENDC)
+    print(TerminalColors.FAIL + string + TerminalColors.ENDC)
