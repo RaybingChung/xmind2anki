@@ -1,14 +1,15 @@
 import json
 import zipfile
-from os import sep, mkdir
-from os.path import exists
+from os import sep, mkdir, listdir
+from os.path import exists, getctime
 from shutil import copyfile
 from time import strftime, localtime
-from typing import List, TypedDict, Dict
+from typing import List, TypedDict
 from warnings import warn
 
 
-class ProcessedNode(TypedDict):
+class ParsedNodeFromXmind(TypedDict):
+    id: str
     title: str
     children: List[str]
     ancestors: List[str]
@@ -21,46 +22,167 @@ class NodeStatus:
 
 
 class XmindParser:
-    xmind_file_path: str
+    xmind_file_path: str = None
     xmind_json = None
-    xmind_file_path: str
-    back_up_dir_path: str
+
     root = None
     hrefs = None
-    parsed_notes = None
+    parsed_nodes: List[ParsedNodeFromXmind] = None
 
-    def __init__(self, xmind_file_path, back_up_path=None):
+    back_up_dir_path: str = 'backup'
+    latest_backup_xmind_json = None
+
+    def __init__(self, xmind_file_path, back_up_path):
+
         self.xmind_file_path = xmind_file_path
-        self.xmind_json = self.load_xmind()
-        if back_up_path is not None:
-            self.back_up_dir_path = back_up_path
-        self.root = self.get_root()
-        self.hrefs = self.get_hrefs()
-        # print(self.hrefs)
-        self.parsed_notes = self.parse_xmind()
-
-    def load_xmind(self):
-        with zipfile.ZipFile(self.xmind_file_path) as zip_out:
-            with zip_out.open('content.json') as zip_file:
-                xmind_json = zip_file.read()
-        xmind_json = json.loads(xmind_json)
-
-        return xmind_json
-
-    def create_backup_xmind_file(self):
         if self.xmind_file_path.split('.')[-1] != 'xmind':
             raise Exception('not xmind file')
 
-        path_name = self.xmind_file_path.split(sep='.')
-        path_name[-2] = path_name[-2] + '_backup_' + strftime('%Y%M%D%H', localtime())
+        self.xmind_json = XmindParser.load_xmind_to_xmind_json(self.xmind_file_path)
 
-        dst_path_to_file = '.'.join(path_name)
-        if self.back_up_dir_path is not None:
-            if exists(self.back_up_dir_path) is None:
-                mkdir(self.back_up_dir_path)
-            dst_path_to_file = '.'.join([self.back_up_dir_path, dst_path_to_file.split(sep)[-1]])
+        self.back_up_dir_path = back_up_path
+        if exists(self.back_up_dir_path) is False:
+            mkdir(self.back_up_dir_path)
+
+        self.back_up_dir_path = self.back_up_dir_path + sep + 'xmind'
+        if exists(self.back_up_dir_path) is False:
+            mkdir(self.back_up_dir_path)
+        self.root = XmindParser.get_root(self.xmind_json)
+        self.hrefs = self.get_hrefs(self.xmind_json)
+        # print(self.hrefs)
+        self.parsed_nodes = self.parse_xmind_into_nodes(self.root, self.hrefs)
+
+    @staticmethod
+    def load_xmind_to_xmind_json(xmind_file_path):
+        with zipfile.ZipFile(xmind_file_path) as zip_out:
+            with zip_out.open('content.json') as zip_file:
+                xmind_json = zip_file.read()
+        xmind_json = json.loads(xmind_json)
+        return xmind_json
+
+    @staticmethod
+    def get_root(xmind_json):
+        return xmind_json[0]['rootTopic']
+
+    @staticmethod
+    def get_hrefs(xmind_json):
+        return [href['rootTopic'] for href in xmind_json[1:]]
+
+    @staticmethod
+    def get_title_from_xmind_node(xmind_node):
+        return xmind_node["title"]
+
+    @staticmethod
+    def get_id_from_xmind_node(xmind_node):
+        return xmind_node["id"]
+
+    @staticmethod
+    def get_children_nodes_from_xmind_node(xmind_node, hrefs):
+        if "children" not in xmind_node and 'href' not in xmind_node:
+            raise Exception('There is no child in {}'.format(XmindParser.get_title_from_xmind_node(xmind_node)))
+        elif "children" in xmind_node and 'href' in xmind_node:
+            warn('There are both href and children in {}'.format(str(xmind_node)))
+            href_node = XmindParser.get_href_of_node_in_new_sheet(xmind_node, hrefs)
+            return href_node['children']['attached'] + xmind_node['children']['attached']
+        elif "children" not in xmind_node and 'href' in xmind_node:
+            href_node = XmindParser.get_href_of_node_in_new_sheet(xmind_node, hrefs)
+            return href_node['children']['attached']
+        else:
+            return xmind_node['children']['attached']
+
+    @staticmethod
+    def get_href_of_node_in_new_sheet(current_raw_node: dict, hrefs):
+        if 'href' not in current_raw_node:
+            raise Exception('There is no href in this node {}'.format(str(current_raw_node)))
+        href_id = current_raw_node['href'].split('#')[-1]
+        for node in hrefs:
+            if node['id'] == href_id:
+                return node
+        raise Exception('There is no specific id:{} node in hrefs of node {}'.format(href_id, str(current_raw_node)))
+
+    @staticmethod
+    def get_children_titles(node, hrefs):
+        if "children" not in node and 'href' not in node:
+            raise Exception('There is no child in {}'.format(
+                XmindParser.get_title_from_xmind_node(node)))
+        if 'href' in node:
+            return [XmindParser.get_title_from_xmind_node(child) for child in
+                    XmindParser.get_children_nodes_from_xmind_node(node, hrefs)]
+        return [XmindParser.get_title_from_xmind_node(child) for child in
+                XmindParser.get_children_nodes_from_xmind_node(node, hrefs)]
+
+    @staticmethod
+    def transform_xmind_node_to_processed_note(node, ancestors, hrefs):
+        return {'id': XmindParser.get_id_from_xmind_node(node),
+                'title': XmindParser.get_title_from_xmind_node(node),
+                'children': XmindParser.get_children_titles(node, hrefs),
+                'ancestors': ancestors}
+
+    @staticmethod
+    def parse_xmind_into_nodes(root, hrefs):
+        ancestor_list_stack = [[]]
+        raw_node_stack = [root]
+        parsed_nodes = []
+
+        while len(raw_node_stack) != 0:
+            node = raw_node_stack.pop()
+            current_title = XmindParser.get_title_from_xmind_node(node)
+            ancestors = ancestor_list_stack.pop()
+
+            if "children" in node or 'href' in node:
+
+                parsed_nodes.append(
+                    XmindParser.transform_xmind_node_to_processed_note(node, ancestors, hrefs))
+
+                children = XmindParser.get_children_nodes_from_xmind_node(node, hrefs)
+                raw_node_stack.extend(reversed(children))
+                children_ancestors = ancestors.copy()
+                children_ancestors.append(current_title)
+                ancestor_list_stack.extend(
+                    [children_ancestors for _ in range(len(children))])
+            else:
+                pass
+        return parsed_nodes
+
+    def create_backup_xmind_file(self):
+        filename = self.xmind_file_path.split(sep)[-1].split('.')[0]
+        dst_path_to_file = self.back_up_dir_path + sep + filename + strftime("%Y%m%d%H%M%S", localtime())
         copyfile(self.xmind_file_path, dst_path_to_file)
         return dst_path_to_file
+
+    def load_and_classify_changes_in_xmind(self):
+        current_xmind_nodes = self.parsed_nodes
+        last_version_xmind_nodes = self.load_nodes_latest_backup_xmind()
+        deleted_nodes_id = set(map(lambda node: node['id'], last_version_xmind_nodes)) - set(
+            map(lambda node: node['id'], current_xmind_nodes))
+        notes_to_add = set(map(lambda node: node['id'], current_xmind_nodes)) - set(
+            map(lambda node: node['id'], last_version_xmind_nodes))
+        notes_to_add = [node for node in current_xmind_nodes if node['id'] in notes_to_add]
+        id_identical = set(map(lambda node: node['id'], current_xmind_nodes)) & set(
+            map(lambda node: node['id'], last_version_xmind_nodes))
+        current_xmind_nodes_with_identical_id_in_backup_xmind = list(
+            filter(lambda node: node['id'] in id_identical, current_xmind_nodes))
+
+        last_version_xmind_nodes = {node['id']: node for node in last_version_xmind_nodes}
+        altered_nodes = [node for node in current_xmind_nodes_with_identical_id_in_backup_xmind if
+                         last_version_xmind_nodes[node['id']] != node]
+
+        return list(deleted_nodes_id), notes_to_add, altered_nodes
+
+    def load_nodes_latest_backup_xmind(self):
+        backup_files = listdir(self.back_up_dir_path)
+        if len(backup_files) == 0:
+            return []
+        latest_back_up_file = self.back_up_dir_path + sep + max(backup_files, key=lambda filename: getctime(
+            self.back_up_dir_path + sep + filename))
+        with zipfile.ZipFile(latest_back_up_file) as zip_out:
+            with zip_out.open('content.json') as zip_file:
+                xmind_json = zip_file.read()
+        latest_backup_xmind_json = json.loads(xmind_json)
+        backup_xmind_root = XmindParser.get_root(latest_backup_xmind_json)
+        backup_xmind_href = XmindParser.get_hrefs(latest_backup_xmind_json)
+
+        return XmindParser.parse_xmind_into_nodes(backup_xmind_root, backup_xmind_href)
 
     def save_xmind_to_file(self):
         back_up_file_path = self.create_backup_xmind_file()
@@ -79,138 +201,5 @@ class XmindParser:
                 with zip_out.open('content.json', mode='w') as zip_file:
                     zip_file.write(bytes(json.dumps(self.xmind_json, ensure_ascii=False), 'utf-8'))
 
-    def get_root(self):
-        if self.root is not None:
-            return self.root
-        return self.xmind_json[0]['rootTopic']
 
-    def get_hrefs(self):
-        if self.hrefs is not None:
-            return self.hrefs
-        return [href['rootTopic'] for href in self.xmind_json[1:]]
 
-    @staticmethod
-    def get_title_from_xmind_node(xmind_node):
-        return xmind_node["title"]
-
-    @staticmethod
-    def get_id_from_xmind_node(xmind_node):
-        return xmind_node["id"]
-
-    def get_children_nodes_from_xmind_node(self, xmind_node):
-        if "children" not in xmind_node and 'href' not in xmind_node:
-            raise Exception('There is no child in {}'.format(self.get_title_from_xmind_node(xmind_node)))
-        elif "children" in xmind_node and 'href' in xmind_node:
-            warn('There are both href and children in {}'.format(str(xmind_node)))
-            href_node = self.get_href_of_node_in_new_sheet(xmind_node)
-            return href_node['children']['attached'] + xmind_node['children']['attached']
-        elif "children" not in xmind_node and 'href' in xmind_node:
-            href_node = self.get_href_of_node_in_new_sheet(xmind_node)
-            return href_node['children']['attached']
-        else:
-            return xmind_node['children']['attached']
-
-    def get_href_of_node_in_new_sheet(self, current_raw_node: dict):
-        if 'href' not in current_raw_node:
-            raise Exception('There is no href in this node {}'.format(str(current_raw_node)))
-        href_id = current_raw_node['href'].split('#')[-1]
-        for node in self.hrefs:
-            if node['id'] == href_id:
-                return node
-        raise Exception('There is no specific id:{} node in hrefs of node {}'.format(href_id, str(current_raw_node)))
-
-    def get_children_titles_of_node(self, node):
-        if "children" not in node and 'href' not in node:
-            raise Exception('There is no child in {}'.format(
-                self.get_title_from_xmind_node(node)))
-        if 'href' in node:
-            return [self.get_title_from_xmind_node(child) for child in self.get_children_nodes_from_xmind_node(node)]
-        return [self.get_title_from_xmind_node(child) for child in self.get_children_nodes_from_xmind_node(node)]
-
-    def check_node_status(self, node):
-        pass
-        # updated > saved > unsaved
-        # node_status = NodeStatus.unsaved
-        # if 'markers' not in node:
-        #     pass
-        # else:
-        #     for marker in node['markers']:
-        #         if marker['markerId'] == 'c_symbol_pen':
-        #             node_status = NodeStatus.updated
-        #         if marker['markerId'] == 'task-done':
-        #             if node_status != NodeStatus.updated:
-        #                 node_status = NodeStatus.saved
-        # if 'href' in node:
-        #     href_node = self.get_children_nodes_from_xmind_node(node)
-        #     href_node_status = self.check_node_status(href_node)
-        #     if href_node_status == NodeStatus.updated or node_status == NodeStatus.updated:
-        #         node_status = NodeStatus.updated
-        #     elif href_node == NodeStatus.saved or node_status == NodeStatus.saved:
-        #         node_status = NodeStatus.saved
-        #     else:
-        #         node_status = NodeStatus.unsaved
-        # return node_status
-
-    def add_processed_marker(self, raw_node: Dict, hrefs):
-        pass
-        # # print(raw_node)
-        # if 'href' in raw_node:
-        #     href_node = get_href(raw_node, hrefs)
-        #     add_processed_marker(href_node, hrefs)
-        # if 'markers' not in raw_node:
-        #     raw_node['markers']: List = [{'markerId': "task-done"}]
-        # else:
-        #     raw_node['markers']: List = list(filter(
-        #         lambda marker: marker['markerId'] != 'c_symbol_pen' and marker['markerId'] != 'task-done',
-        #         raw_node['markers']))
-        #     raw_node['markers'].append({'markerId': "task-done"})
-
-    def transform_xmind_node_to_processed_note(self, node, ancestors):
-        return {'id': self.get_id_from_xmind_node(node),
-                'title': self.get_title_from_xmind_node(node),
-                'children': self.get_children_titles_of_node(node),
-                'ancestors': ancestors}
-
-    def parse_xmind(self):
-        ancestor_list_stack = [[]]
-        raw_node_stack = [self.root]
-        parsed_nodes = []
-
-        while len(raw_node_stack) != 0:
-            node = raw_node_stack.pop()
-            current_title = self.get_title_from_xmind_node(node)
-            ancestors = ancestor_list_stack.pop()
-
-            if "children" in node or 'href' in node:
-
-                # print(1)
-                # if check_node_status(node, hrefs) == NodeStatus.unsaved:
-                #     print(2)
-                #     add_processed_marker(node, hrefs)
-
-                parsed_nodes.append(
-                    self.transform_xmind_node_to_processed_note(node, ancestors))
-                #     elif check_node_status(node, hrefs) is NodeStatus.saved:
-                #         print(3)
-                #         pass
-                #     elif check_node_status(node, hrefs) is NodeStatus.updated:
-                #         add_processed_marker(node, hrefs)
-                #         print(4)
-                #         processed_notes.append(
-                #             {'node': trans_raw_node2processed_node(node, ancestors, hrefs),
-                #              'status': NodeStatus.updated})
-                children = self.get_children_nodes_from_xmind_node(node)
-                raw_node_stack.extend(reversed(children))
-                children_ancestors = ancestors.copy()
-                children_ancestors.append(current_title)
-                ancestor_list_stack.extend(
-                    [children_ancestors for _ in range(len(children))])
-            else:
-                pass
-            #     if check_node_status(node, hrefs) is NodeStatus.unsaved:
-            #         add_processed_marker(node, hrefs)
-            #     elif check_node_status(node, hrefs) is NodeStatus.saved:
-            #         pass
-
-        # print(xmind)
-        return parsed_nodes
