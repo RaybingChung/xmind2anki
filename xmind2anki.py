@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import cvtmode.toefl.independent_writing
 from anki_connect import AnkiConnector, warn_print
+from cvtmode.knowledge_for_hunting_jobs import JobInterviewKnowledgeMode
 from xmind_parser import XmindParser, ParsedNodeFromXmind
 
 
@@ -20,7 +21,12 @@ class Courier:
     note_type_and_transform_mode_dict = {
         'tiw': {
             'deck_name': cvtmode.toefl.independent_writing.deck_name,
-            'transform_function': cvtmode.toefl.independent_writing.transform_node_to_note}}
+            'transform_function': cvtmode.toefl.independent_writing.transform_node_to_note},
+        'jik': {
+            'deck_name': JobInterviewKnowledgeMode.deck_name,
+            'transform_function': JobInterviewKnowledgeMode.transform_node_to_note
+        }
+    }
 
     increased_nodes: List[ParsedNodeFromXmind]
     ids_of_deleted_nodes: List[str]

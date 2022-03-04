@@ -1,9 +1,12 @@
 from xmind2anki import Courier
 
 if __name__ == '__main__':
-    xmind_file_path: str = r'E:\MyLibrary\Hunt4job\找工altered - Copy.xmind'
+    xmind_file_path: str = r'E:\MyLibrary\XmindRepo\后端开发面试知识.xmind'
 
-    transformer = Courier(xmind_file_path)
+    courier = Courier(xmind_file_path)
 
-    transformer.set_note_type('tif')
+    courier.set_note_type('jik')
+
+    courier.upload_all_changes_to_anki()
     print('Successfully transform xmind note to anki note.')
+
