@@ -48,6 +48,9 @@ class Courier:
 
         self.xmind_parser = XmindParser(xmind_file_path, back_up_path=self.backup_dir)
         self.anki_connect = AnkiConnector()
+        if self.anki_connect.check_connection() is False:
+            print('anki is not connecting.')
+            exit(-1)
         self.parsed_nodes_from_new_xmind = self.xmind_parser.parsed_nodes
 
         self.id_dictionary_path = self.backup_dir + sep + 'id_dictionary'

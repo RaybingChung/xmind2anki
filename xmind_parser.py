@@ -130,7 +130,9 @@ class XmindParser:
             ancestors = ancestor_list_stack.pop()
 
             if "children" in node or 'href' in node:
-
+                if "children" in node and len(node['children']) == 0:
+                    if 'href' not in node:
+                        continue
                 parsed_nodes.append(
                     XmindParser.transform_xmind_node_to_processed_note(node, ancestors, hrefs))
 
